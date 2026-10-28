@@ -1,0 +1,411 @@
+<!-- =====================================================================
+ ส่วนเสริมรุ่น 6 — วางทั้งไฟล์นี้ใน Index.html "ก่อนบรรทัด </body>" (ต่อจาก </script> ตัวสุดท้าย)
+   · หน้า "สรุปผู้บริหาร" (เปิดเป็นหน้าแรก): คะแนนรวม สถานะรายไตรมาส แนวโน้ม และสิ่งที่ต้องดำเนินการเรียงตามความเร่งด่วน
+   · ค้นหาด่วน Ctrl+K หรือ / : ไปที่ตัวชี้วัด ระบบ รายการ อุปกรณ์ สัญญา หรือผู้รับผิดชอบได้ทันที
+   · แก้ไขตรงจุด: ปุ่มพาไปยังช่องที่ต้องแก้ (เดือน / รายการ / หัวข้อผู้ดูแลระบบ) และไฮไลต์ให้
+   · หน้าผู้ดูแลระบบ: เรียงเลขหัวข้อใหม่ และมีแถบลัดไปแต่ละหัวข้อ
+ ไม่ต้องแก้ Code.gs (ใช้ข้อมูลเดิมจาก getAll)
+ ===================================================================== -->
+<style>
+.ex-head{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;align-items:flex-end;margin-bottom:8px}
+.ex-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin:12px 0 16px}
+.ex-card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px;min-width:0}
+.ex-card.click{cursor:pointer;transition:box-shadow .15s}
+.ex-card.click:hover,.ex-card.click:focus-visible{box-shadow:0 0 0 2px var(--accent);outline:none}
+.ex-big{font:600 34px/1.1 var(--serif);font-variant-numeric:tabular-nums}
+.ex-lbl{font-size:13px;color:var(--muted)}
+.ex-grid{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:14px;align-items:start}
+@media(max-width:980px){.ex-grid{grid-template-columns:1fr}}
+.ex-mx th,.ex-mx td{padding:6px 8px;font-size:13px}
+.ex-mx tbody tr.ex-r{cursor:pointer}.ex-mx tbody tr.ex-r:hover td{background:var(--soft)}
+.ex-cell{display:inline-block;min-width:62px;text-align:center;border-radius:6px;padding:2px 6px;font-weight:600;font-variant-numeric:tabular-nums}
+.ex-cell.ok{background:var(--ok-bg);color:var(--ok)}.ex-cell.warn{background:var(--warn-bg);color:var(--warn)}
+.ex-cell.bad{background:var(--bad-bg);color:var(--bad)}.ex-cell.verify{background:var(--verify-bg);color:var(--verify)}
+.ex-cell.nodata{background:var(--nodata-bg);color:var(--nodata);font-weight:400}.ex-cell.info{background:var(--info-bg);color:var(--info)}
+.ex-tr{font-size:12.5px;white-space:nowrap}.ex-tr.up{color:var(--ok)}.ex-tr.down{color:var(--bad)}.ex-tr.flat{color:var(--muted)}
+.ex-act{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.ex-act li{border:1px solid var(--line);border-left:5px solid var(--sc,var(--line));border-radius:10px;padding:8px 10px;background:var(--panel)}
+.ex-act .m{display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin-top:4px}
+.fixbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:4px 0 14px;padding:8px 12px;border:1px dashed var(--accent);border-radius:10px;background:var(--soft)}
+.fixfocus{box-shadow:0 0 0 3px var(--warn)!important;transition:box-shadow .3s}
+.admtoc{display:flex;gap:6px;flex-wrap:wrap;position:sticky;top:0;z-index:4;background:var(--bg2);padding:8px 0;margin-bottom:10px}
+.cmdk{align-items:flex-start!important;padding-top:9vh!important}
+.cmdk .box{width:min(700px,100%)!important;padding:12px!important}
+.cmdk input[type=search]{width:100%;font-size:17px;min-height:46px}
+.cmdk-res{max-height:60vh;overflow:auto;margin:8px 0}
+.cmdk-g{font-size:12px;font-weight:600;color:var(--muted);margin:10px 4px 4px}
+.cmdk-i{display:flex;gap:8px;align-items:baseline;width:100%;text-align:left;border:0;border-radius:8px;background:none;padding:7px 10px;min-height:0}
+.cmdk-i.on,.cmdk-i:hover{background:var(--soft);box-shadow:inset 0 0 0 2px var(--accent)}
+@media print{.fixbar,.admtoc,#cmdkBtn{display:none!important}}
+</style>
+<script>
+(function(){
+if(typeof render!=='function'||typeof S==='undefined') return;
+var ORIG={render:render,dKpi:dKpi,dItem:dItem,drawAdmin:drawAdmin};
+var SEV={high:['bad','เร่งด่วน',0],medium:['warn','ควรติดตาม',1],low:['info','ปรับปรุง',2]};
+
+/* ---------- ลงทะเบียนแท็บ "สรุปผู้บริหาร" และปุ่มค้นหา ---------- */
+ALL_TABS.unshift(['exec','สรุปผู้บริหาร']);
+TAB_COLOR.exec='#0b3d91';
+document.querySelector('main').insertBefore(el('section',{cls:'panel',id:'p-exec',hidden:'hidden'}),$('p-overview'));
+var h0=(location.hash||'').replace('#','');
+if(h0==='exec'||(!h0&&S.tab==='overview')) S.tab='exec';
+var tools=document.querySelector('.tools');
+if(tools) tools.insertBefore(el('button',{type:'button',id:'cmdkBtn',cls:'noprint',title:'ค้นหาและไปที่ (Ctrl+K หรือ /)',text:'🔍 ค้นหา / ไปที่',onclick:openPalette}),$('printBtn'));
+document.addEventListener('keydown',function(e){
+  var tg=e.target||{},typing=/INPUT|TEXTAREA|SELECT/.test(tg.tagName||'')||tg.isContentEditable;
+  if((e.ctrlKey||e.metaKey)&&(e.key==='k'||e.key==='K')){e.preventDefault();openPalette();}
+  else if(e.key==='/'&&!typing&&!e.ctrlKey&&!e.metaKey){e.preventDefault();openPalette();}
+});
+
+render=function(){
+  if(S.tab!=='exec'||S.detail){var px=$('p-exec');if(px)px.hidden=true;return ORIG.render();}
+  if(!S.all) return;
+  renderTabs();destroyChart('m');destroyChart('pm');destroyRpCharts();
+  ALL_TABS.forEach(function(t){var x=$('p-'+t[0]);if(x)x.hidden=t[0]!=='exec';});
+  $('p-detail').hidden=true;$('p-sysview').hidden=true;
+  var p=$('p-exec');p.hidden=false;p.textContent='';p.style.borderTop='6px solid '+TAB_COLOR.exec;
+  try{rExec(p);}catch(e){p.appendChild(el('div',{cls:'msg err',text:'แสดงหน้าสรุปผู้บริหารไม่สำเร็จ: '+e.message}));}
+  p.insertBefore(xbar(p,function(){return 'สรุปผู้บริหาร ปีงบ '+S.fy;}),p.firstChild);
+};
+
+/* ---------- เครื่องมือ ---------- */
+function short(n){return String(n||'').replace(/\s*\(.*?\)\s*/g,' ').trim();}
+function okCell(k,c){return !!c&&(k.kind==='ratio'?(c.num!==null&&c.den!==null):c.num!==null);}
+function tone(v,good,warn){return v===null||v===undefined?'':(v>=good?'ok':(v>=warn?'warn':'bad'));}
+function btn(label,f,primary){return el('button',{type:'button',cls:primary?'primary':'act',text:label,onclick:function(ev){ev.stopPropagation();goFix(f);}});}
+function fixbar(list){return el('div',{cls:'fixbar noprint'},[el('b',{text:'แก้ไขตรงจุด:'})].concat(list.filter(Boolean)));}
+function afterSub(p,node){var s=p.querySelector('p.sub')||p.querySelector('h2');if(s&&s.parentNode)s.parentNode.insertBefore(node,s.nextSibling);else p.insertBefore(node,p.firstChild);}
+function waitFor(sel,cb,ms){var t0=Date.now();(function tick(){var e=typeof sel==='function'?sel():document.querySelector(sel);if(e)return cb(e);if(Date.now()-t0<(ms||10000))setTimeout(tick,150);})();}
+function flash(node){if(!node)return;try{node.scrollIntoView({block:'center'});}catch(e){}node.classList.add('fixfocus');setTimeout(function(){node.classList.remove('fixfocus');},4000);}
+function ring(pct,col){
+  var r=34,c=2*Math.PI*r,d=pct===null?0:c*Math.max(0,Math.min(100,pct))/100,s=el('span');
+  s.innerHTML='<svg viewBox="0 0 84 84" width="78" height="78" aria-hidden="true"><circle cx="42" cy="42" r="'+r+'" fill="none" stroke="var(--line)" stroke-width="9"/><circle cx="42" cy="42" r="'+r+'" fill="none" stroke="'+col+'" stroke-width="9" stroke-linecap="round" stroke-dasharray="'+d.toFixed(1)+' '+c.toFixed(1)+'" transform="rotate(-90 42 42)"/></svg>';
+  return s.firstChild;
+}
+function trendOf(k,fy){
+  if(k.dir==='info') return {cls:'flat',txt:'–'};
+  var v=[];ALL_MONTHS.forEach(function(m){var a=aggregate(k,S.ix,fy,[m],'month');if(a.value!==null)v.push(a.value);});
+  if(v.length<2) return {cls:'flat',txt:'–'};
+  var a=v[v.length-2],b=v[v.length-1];
+  if(Math.abs(b-a)<1e-9) return {cls:'flat',txt:'► คงที่'};
+  var better=(k.dir==='ge'||k.dir==='gt')?b>a:b<a;
+  return {cls:better?'up':'down',txt:better?'▲ ดีขึ้น':'▼ แย่ลง'};
+}
+function gapTxt(k,v){
+  if(v===null) return '';var t=Number(k.thr);
+  if(k.dir==='ge'||k.dir==='gt') return ' · ต่ำกว่าเป้า '+fmtNum1(Math.abs(t-v))+(k.kind==='ratio'?' จุดร้อยละ':'');
+  if(k.dir==='lt') return ' · สูงกว่าเกณฑ์ '+fmtNum1(v-t)+(k.kind==='ratio'?' จุดร้อยละ':'');
+  if(k.dir==='zero') return ' · เกิดขึ้น '+fmtNum1(v)+' ครั้ง';
+  if(k.dir==='le_year') return ' · เกินเกณฑ์ '+fmtNum1(v-t)+' ครั้ง';
+  return '';
+}
+function fixForKpi(k,m){
+  if(k.source==='pm') return {t:'tab',tab:'pm',set:{pmView:'month',_pmMonth:m||1,pmF:{sys:'',who:'',kpi:k.kpi_id,mine:false}}};
+  if(k.source==='guard') return {t:'tab',tab:'guard'};
+  return {t:'entry',kpi:k.kpi_id,m:m||1};
+}
+function lastUpdate(){
+  var lu='';[S.rawData||[],S.all.plan||[]].forEach(function(a){a.forEach(function(r){var x=String(r.updated_at||'');if(/^\d{4}-/.test(x)&&x>lu)lu=x;});});
+  return lu;
+}
+
+/* ---------- สรุปข้อมูลสำหรับหน้าผู้บริหาร ---------- */
+function freshness(fy,upto){
+  var o={exp:0,got:0,pct:null,units:{}};if(!upto) return o;
+  S.all.master.forEach(function(k){
+    if(k.source==='pm'||k.source==='guard') return;
+    var u=o.units[k.unit]=o.units[k.unit]||{exp:0,got:0,first:null,miss:[]};
+    for(var m=1;m<=upto;m++){o.exp++;u.exp++;if(okCell(k,getCell(S.ix,fy,k.kpi_id,m))){o.got++;u.got++;}else{u.miss.push({k:k,m:m});if(!u.first)u.first={k:k,m:m};}}
+  });
+  o.pct=o.exp?Math.round(o.got/o.exp*100):null;return o;
+}
+function pmByUnit(fy,upto){
+  var o={pct:null,units:[]};if(!upto) return o;
+  var ms=ALL_MONTHS.slice(0,upto);
+  var its=itemsForFy(fy).filter(function(i){return ms.some(function(m){var c=S.pix[fy+'|'+i.code+'|'+m];return c&&toNum(c.plan)>0;});});
+  var g={};its.forEach(function(i){var u=sysUnit(i.code);(g[u]=g[u]||[]).push(i);});
+  var all=pmEvidence(S.pix,its,fy,ms);o.pct=all.pct===null?null:Math.round(all.pct);
+  o.units=Object.keys(g).sort().map(function(u){var e=pmEvidence(S.pix,g[u],fy,ms);return {u:u,n:g[u].length,num:e.num,den:e.den,pct:e.pct===null?null:Math.round(e.pct)};});
+  return o;
+}
+function execActions(rows,fy,fresh){
+  var d=S.all,A=[];
+  rows.forEach(function(r){
+    var k=r.k,lm=lastDataMonth([k],S.ix,fy)||1;
+    if(r.y.status==='bad') A.push({sev:'high',txt:k.kpi_id+' '+short(k.name)+' ได้ '+fmtVal(k,r.y.value)+' (เป้า '+k.target_text+')'+gapTxt(k,r.y.value),own:k.unit,fix:fixForKpi(k,lm),see:{t:'kpi',id:k.kpi_id}});
+    else if(r.y.status==='warn') A.push({sev:'medium',txt:k.kpi_id+' '+short(k.name)+' ใกล้เป้า '+fmtVal(k,r.y.value)+' (เป้า '+k.target_text+')',own:k.unit,fix:fixForKpi(k,lm),see:{t:'kpi',id:k.kpi_id}});
+    if(r.y.bad){
+      var bm=0;ALL_MONTHS.forEach(function(m){if(!bm&&isInvalid(k,getCell(S.ix,fy,k.kpi_id,m)))bm=m;});
+      A.push({sev:'high',txt:k.kpi_id+' ข้อมูลผิดปกติ '+r.y.bad+' เดือน (ตัวตั้งมากกว่าตัวหาร) เช่น '+monthLabel(fy,bm||1),own:k.unit,fix:{t:'entry',kpi:k.kpi_id,m:bm||1},see:{t:'kpi',id:k.kpi_id,m:bm||0}});
+    }
+  });
+  crossChecks(d.master,S.ix,S.pix,d.items,fy,S.lix).filter(function(c){return c.flag&&c.period==='ทั้งปี';}).forEach(function(c){
+    var u=c.unit==='%'?'%':' ครั้ง';
+    A.push({sev:'high',txt:'ผลรายงานไม่ตรงหลักฐาน: '+c.rule+' (รายงาน '+fmtNum1(c.reported)+u+' · หลักฐาน '+fmtNum1(c.evidence)+u+')',own:'ผู้ดูแลข้อมูล',fix:{t:'tab',tab:'link'}});
+  });
+  Object.keys(fresh.units).forEach(function(u){
+    var x=fresh.units[u];if(!x.miss.length) return;
+    A.push({sev:x.miss.length>=6?'high':'medium',txt:'หน่วย '+u+' ยังไม่ส่งผล KPI '+x.miss.length+' ค่า เช่น '+x.miss.slice(0,3).map(function(y){return y.k.kpi_id+' '+MONTH_NAMES[y.m-1];}).join(', '),own:u,fix:{t:'entry',kpi:x.first.k.kpi_id,m:x.first.m}});
+  });
+  (d.contracts||[]).filter(function(c){return isAct(c.active)&&c.sum.late_rounds>0;}).forEach(function(c){
+    A.push({sev:'high',txt:'สัญญา '+c.company+' เกินกำหนด '+c.sum.late_rounds+' รอบ · '+ctNextText(c),own:'ผู้ดูแลสัญญา',fix:{t:'contract',id:c.contract_id}});
+  });
+  if(typeof gapAnalyze==='function'){
+    var g=gapAnalyze(),sh={},nr={};
+    g.rows.forEach(function(r){if(r.flags.indexOf('short')>=0)(sh[r.unit]=sh[r.unit]||[]).push(r);if(r.flags.indexOf('noresp')>=0)(nr[r.unit]=nr[r.unit]||[]).push(r);});
+    Object.keys(sh).forEach(function(u){A.push({sev:'medium',txt:'บำรุงรักษายังไม่ครบตามแผน '+sh[u].length+' รายการ เช่น '+sh[u].slice(0,2).map(function(r){return r.it.code+' '+r.it.name.slice(0,26);}).join(', '),own:u,fix:{t:'tab',tab:'gap',set:{gapF:{cat:'short',sys:'',unit:u}}}});});
+    Object.keys(nr).forEach(function(u){A.push({sev:'low',txt:'ยังไม่กำหนดผู้รับผิดชอบ '+nr[u].length+' รายการ',own:u,fix:{t:'tab',tab:'gap',set:{gapF:{cat:'noresp',sys:'',unit:u}}}});});
+  }
+  return A.sort(function(a,b){return SEV[a.sev][2]-SEV[b.sev][2];});
+}
+
+/* ---------- หน้าสรุปผู้บริหาร ---------- */
+function rExec(p){
+  var d=S.all,fy=S.fy,cf=currentFiscal(S.today);
+  var upto=fy<cf.fy?12:(fy===cf.fy?cf.month-1:0),last=lastDataMonth(d.master,S.ix,fy);
+  var rows=d.master.map(function(k){return {k:k,y:aggregate(k,S.ix,fy,ALL_MONTHS,'year'),q:QUARTERS.map(function(Q){return aggregate(k,S.ix,fy,Q.months,'quarter');}),tr:trendOf(k,fy)};});
+  var judged=rows.filter(function(r){return ['ok','warn','bad'].indexOf(r.y.status)>=0;});
+  var pass=judged.filter(function(r){return r.y.status==='ok';}).length,score=judged.length?Math.round(pass/judged.length*100):null;
+  var bad=rows.filter(function(r){return r.y.status==='bad';});
+  var fresh=freshness(fy,upto),pm=pmByUnit(fy,upto);
+  var late=(d.contracts||[]).filter(function(c){return isAct(c.active)&&c.sum.late_rounds>0;});
+  var acts=execActions(rows,fy,fresh),urgent=acts.filter(function(a){return a.sev==='high';}).length,lu=lastUpdate();
+
+  p.appendChild(el('div',{cls:'ex-head'},[
+    el('div',{},[el('h2',{text:'สรุปสำหรับผู้บริหาร · ปีงบประมาณ '+fy}),
+      el('p',{cls:'sub',style:'margin:0',text:'ต.ค. '+((fy-1)%100)+' – ก.ย. '+(fy%100)+' · ข้อมูลถึง '+(last?monthLabel(fy,last):'ยังไม่มี')+(lu?' · ปรับปรุงล่าสุด '+fmtTime(lu):'')+' · คลิกตัวเลขเพื่อดูที่มา หรือกด "แก้ไขที่จุดนี้" เพื่อไปยังช่องที่ต้องแก้'})]),
+    el('div',{cls:'noprint',style:'display:flex;gap:8px;flex-wrap:wrap'},[el('button',{type:'button',text:'🔍 ค้นหา / ไปที่ (Ctrl+K)',onclick:openPalette}),btn('รายงาน PDF',{t:'tab',tab:'report'})])]));
+  var lead=judged.length
+    ?'ผ่านเป้า '+pass+' จาก '+judged.length+' ตัวชี้วัดที่มีผล ('+score+'%)'
+      +(bad.length?' · ต้องเร่งแก้: '+bad.slice(0,3).map(function(r){return short(r.k.name);}).join(', ')+(bad.length>3?' และอีก '+(bad.length-3)+' ตัว':''):' · ไม่มีตัวชี้วัดที่ไม่ผ่านเป้า')
+      +(fresh.pct!==null&&fresh.pct<100?' · ข้อมูลส่งครบ '+fresh.pct+'%':'')
+      +(urgent?' · มี '+urgent+' เรื่องเร่งด่วนรอดำเนินการ':'')+'.'
+    :'ปีงบประมาณนี้ยังไม่มีผลตัวชี้วัดเพียงพอสำหรับสรุป';
+  p.appendChild(el('p',{cls:'lead',id:'exLead',text:lead}));
+
+  function tile(kids,f,title){return el('div',{cls:'ex-card click',role:'button',tabindex:'0',title:title,onclick:function(){goFix(f);},onkeydown:function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();goFix(f);}}},[el('div',{style:'display:flex;gap:12px;align-items:center'},kids)]);}
+  function big(v,cls,lbl){return [el('div',{},[el('div',{cls:'ex-big',style:cls?'color:var(--'+cls+')':'',text:String(v)}),el('div',{cls:'ex-lbl',text:lbl})])];}
+  var sc=tone(score,80,60);
+  var tiles=el('div',{cls:'ex-kpis',id:'exTiles'});
+  tiles.appendChild(tile([ring(score,'var(--'+(sc||'nodata')+')')].concat(big(score===null?'–':score+'%',sc,'ตัวชี้วัดผ่านเป้า ('+pass+'/'+judged.length+')')),{t:'tab',tab:'overview',set:{ovFlt:'',ovGrp:''}},'ดูผลทุกตัวชี้วัด'));
+  tiles.appendChild(tile(big(bad.length,bad.length?'bad':'ok','ตัวชี้วัดไม่ผ่านเป้า'),{t:'tab',tab:'overview',set:{ovFlt:'bad',ovGrp:''}},'ดูรายการที่ไม่ผ่านเป้า'));
+  tiles.appendChild(tile(big(fresh.pct===null?'–':fresh.pct+'%',tone(fresh.pct,100,90),'ข้อมูล KPI ส่งครบ ('+fresh.got+'/'+fresh.exp+')'),{t:'tab',tab:'dq'},'ดูข้อมูลที่ยังขาด'));
+  tiles.appendChild(tile(big(pm.pct===null?'–':pm.pct+'%',tone(pm.pct,95,85),'บำรุงรักษาครบตามแผน'),{t:'tab',tab:'pm',set:{pmView:'summary'}},'ดูสรุปแผนบำรุงรักษา'));
+  tiles.appendChild(tile(big(late.length,late.length?'bad':'ok','สัญญาเกินกำหนดรอบ'),{t:'tab',tab:'contract',set:{ctF:{q:'',st:'late',sys:''},ctSel:'',ctForm:''}},'ดูสัญญาที่เกินกำหนด'));
+  p.appendChild(tiles);
+
+  var grid=el('div',{cls:'ex-grid'});p.appendChild(grid);
+  /* ตารางสถานะรายไตรมาส */
+  var left=el('div',{cls:'ex-card'},[el('h3',{text:'สถานะตัวชี้วัดรายไตรมาส'}),el('p',{cls:'hint',style:'margin:0 0 8px',text:'สีเขียว ผ่าน · เหลือง ใกล้เป้า · แดง ไม่ผ่าน · เทา ไม่มีข้อมูล · คลิกแถวเพื่อดูค่ารายเดือนและที่มา'})]);
+  var mx=el('table',{cls:'ex-mx',id:'exMatrix'}),hr=el('tr');
+  ['ตัวชี้วัด','เป้า'].concat(QUARTERS.map(function(q){return q.short.replace('ไตรมาส ','Q');})).concat(['ทั้งปี','แนวโน้ม']).forEach(function(h,i){hr.appendChild(el('th',{cls:i>=2&&i<=6?'n':'',text:h}));});
+  mx.appendChild(el('thead',{},[hr]));var mb=el('tbody'),g=null;
+  function cell(k,a,m){return el('td',{cls:'n'},[el('span',{cls:'ex-cell '+a.status,title:STATUS_TEXT[a.status]+(periodNote(a)?' · '+periodNote(a):''),text:a.status==='verify'?'ตรวจสอบ':fmtVal(k,a.value),onclick:m?function(ev){ev.stopPropagation();dOpen({t:'kpi',id:k.kpi_id,m:m});}:null})]);}
+  rows.forEach(function(r){
+    var k=r.k;
+    if(k.group!==g){g=k.group;mb.appendChild(el('tr',{cls:'grprow'},[el('td',{colspan:'8',style:'border-left:5px solid '+grpColor(g)+';color:'+grpColor(g),text:g})]));}
+    var tr=el('tr',{cls:'ex-r',tabindex:'0','data-kpi':k.kpi_id,onclick:function(){dOpen({t:'kpi',id:k.kpi_id});},onkeydown:function(e){if(e.key==='Enter'){e.preventDefault();dOpen({t:'kpi',id:k.kpi_id});}}},
+      [el('td',{},[el('b',{text:k.kpi_id+' '}),short(k.name)]),el('td',{style:'white-space:nowrap',text:k.target_text})]);
+    r.q.forEach(function(a,i){var ms=QUARTERS[i].months.filter(function(m){return okCell(k,getCell(S.ix,fy,k.kpi_id,m));});tr.appendChild(cell(k,a,ms.length?ms[ms.length-1]:0));});
+    tr.appendChild(cell(k,r.y,0));
+    tr.appendChild(el('td',{},[el('span',{cls:'ex-tr '+r.tr.cls,text:r.tr.txt})]));
+    mb.appendChild(tr);
+  });
+  mx.appendChild(mb);left.appendChild(el('div',{cls:'tablebox'},[mx]));grid.appendChild(left);
+
+  /* สิ่งที่ต้องดำเนินการ */
+  var right=el('div',{cls:'ex-card',id:'exActions'},[el('h3',{text:'สิ่งที่ต้องดำเนินการ ('+acts.length+')'}),el('p',{cls:'hint',style:'margin:0 0 8px',text:'เรียงตามความเร่งด่วน · ปุ่ม "แก้ไขที่จุดนี้" พาไปยังช่อง/รายการที่ต้องแก้และไฮไลต์ให้'})]);
+  var ul=el('ol',{cls:'ex-act'}),SHOW=8;
+  function drawActs(n){
+    ul.textContent='';
+    if(!acts.length){ul.appendChild(el('li',{style:'--sc:var(--ok)',text:'ไม่มีเรื่องค้าง ข้อมูลครบและผ่านเป้าทุกตัว'}));return;}
+    acts.slice(0,n).forEach(function(a,i){
+      ul.appendChild(el('li',{style:'--sc:var(--'+SEV[a.sev][0]+')','data-act':String(i)},[
+        el('div',{},[chip(SEV[a.sev][0],SEV[a.sev][1]),' ',a.txt]),
+        el('div',{cls:'m'},[el('span',{cls:'hint',text:'ผู้รับผิดชอบ: '+a.own}),el('span',{style:'display:flex;gap:6px'},[a.see?el('button',{type:'button',cls:'linkbtn',text:'ดูที่มา',onclick:function(){goFix(a.see);}}):null,btn('แก้ไขที่จุดนี้ →',a.fix)])])]));
+    });
+    if(acts.length>n) ul.appendChild(el('li',{},[el('button',{type:'button',cls:'linkbtn',text:'แสดงทั้งหมด '+acts.length+' เรื่อง',onclick:function(){drawActs(acts.length);}})]));
+  }
+  drawActs(SHOW);right.appendChild(ul);grid.appendChild(right);
+
+  /* การส่งข้อมูลและการบำรุงรักษาตามหน่วยงาน */
+  var grid2=el('div',{cls:'ex-grid',style:'margin-top:14px'});p.appendChild(grid2);
+  var fc=el('div',{cls:'ex-card'},[el('h3',{text:'การส่งผล KPI รายหน่วยงาน'+(upto?' (ต.ค. – '+MONTH_NAMES[upto-1]+')':'')})]);
+  var units=Object.keys(fresh.units).sort();
+  if(!units.length) fc.appendChild(el('p',{cls:'hint',text:upto?'ไม่มีตัวชี้วัดที่ต้องกรอกเอง':'ยังไม่ถึงรอบที่ต้องส่งข้อมูล'}));
+  else{
+    var ft=el('table',{id:'exFresh'}),fh=el('tr');['หน่วยงาน','ส่งแล้ว','ร้อยละ','',''].forEach(function(h,i){fh.appendChild(el('th',{cls:i===1||i===2?'n':'',text:h}));});
+    ft.appendChild(el('thead',{},[fh]));var fb=el('tbody');
+    units.forEach(function(u){
+      var x=fresh.units[u],pc=x.exp?Math.round(x.got/x.exp*100):null,st=tone(pc,100,90)||'nodata';
+      fb.appendChild(el('tr',{},[el('td',{text:u}),el('td',{cls:'n',text:x.got+'/'+x.exp}),el('td',{cls:'n',style:'color:var(--'+st+');font-weight:600',text:pc===null?'–':pc+'%'}),
+        el('td',{style:'min-width:90px'},[el('div',{cls:'bar'},[el('i',{style:'width:'+(pc||0)+'%;background:var(--'+st+')'})])]),
+        el('td',{},[x.first?btn('กรอกที่ขาด ('+x.first.k.kpi_id+' '+MONTH_NAMES[x.first.m-1]+')',{t:'entry',kpi:x.first.k.kpi_id,m:x.first.m}):chip('ok','ครบ')])]));
+    });
+    ft.appendChild(fb);fc.appendChild(el('div',{cls:'tablebox'},[ft]));
+  }
+  grid2.appendChild(fc);
+  var pc2=el('div',{cls:'ex-card'},[el('h3',{text:'บำรุงรักษาครบตามแผน รายหน่วยงาน'})]);
+  if(!pm.units.length) pc2.appendChild(el('p',{cls:'hint',text:'ยังไม่มีแผนหรือผลจริงในช่วงที่ประเมิน'}));
+  else{
+    var pt=el('table',{id:'exPm'}),ph=el('tr');['หน่วยงาน','รายการ','ครบ/มีแผน','ร้อยละ'].forEach(function(h,i){ph.appendChild(el('th',{cls:i?'n':'',text:h}));});
+    pt.appendChild(el('thead',{},[ph]));var pb=el('tbody');
+    pm.units.forEach(function(x){var st=tone(x.pct,95,85)||'nodata';pb.appendChild(el('tr',{style:'cursor:pointer',onclick:function(){goFix({t:'tab',tab:'gap',set:{gapF:{cat:'',sys:'',unit:x.u}}});}},[el('td',{text:x.u}),el('td',{cls:'n',text:String(x.n)}),el('td',{cls:'n',text:x.den?x.num+'/'+x.den:'–'}),el('td',{cls:'n',style:'color:var(--'+st+');font-weight:600',text:x.pct===null?'–':x.pct+'%'})]));});
+    pt.appendChild(pb);pc2.appendChild(el('div',{cls:'tablebox'},[pt]));
+    pc2.appendChild(el('p',{cls:'hint',text:'คลิกหน่วยงานเพื่อดูรายการที่ค้าง'}));
+  }
+  var soon=(d.contracts||[]).filter(function(c){return isAct(c.active)&&c.sum.next_days!==null&&c.sum.next_days<=30;}).sort(function(a,b){return a.sum.next_days-b.sum.next_days;}).slice(0,5);
+  if(soon.length){
+    pc2.appendChild(el('h3',{style:'margin-top:14px',text:'สัญญาที่ถึงกำหนด / เกินกำหนด'}));
+    var cl=el('ul',{cls:'note-list'});
+    soon.forEach(function(c){cl.appendChild(el('li',{style:'cursor:pointer',onclick:function(){goFix({t:'contract',id:c.contract_id});}},[el('b',{text:c.company}),el('p',{},[ctStateChip(c),' '+ctNextText(c)])]));});
+    pc2.appendChild(cl);
+  }
+  grid2.appendChild(pc2);
+}
+
+/* ---------- พาไปยังจุดที่ต้องแก้ ---------- */
+function go(tab){S.detail=false;S.tab=tab;try{history.replaceState(null,'','#'+tab);}catch(e){}render();try{window.scrollTo(0,0);}catch(e){}}
+function itemOf(code){return S.all.items.filter(function(i){return i.code===String(code);})[0];}
+function goFix(f){
+  if(!f||!S.all) return;
+  if(typeof menuSet==='function') menuSet(false);
+  var k,it;
+  switch(f.t){
+    case 'kpi': dOpen({t:'kpi',id:f.id,m:f.m||0}); return;
+    case 'item': dOpen({t:'item',id:f.id,m:f.m||0}); return;
+    case 'plan': it=itemOf(f.code); if(it) gapGoPlan(it); return;
+    case 'resp': it=itemOf(f.code); if(it) gapGoResp(it); return;
+    case 'sys': S._sys=f.sys;S.svEq='';S.svLast=null;S.svMode='view';go('sys'); return;
+    case 'eq': S._sys=f.id.slice(0,4);S.svEq=f.id;S.svLast=null;S.svMode='view';go('sys'); return;
+    case 'field': S._fieldCode=f.code;S._fieldDone=null;go('field');if(f.then)waitFor(f.then,function(e){flash(e);e.click();}); return;
+    case 'staff': S.pmView='month';S.pmF={sys:'',who:f.name,kpi:'',mine:false};go('pm'); return;
+    case 'contract':
+      S.ctSel=f.id;S.ctForm='';S.ctF={q:'',st:'',sys:''};go('contract');
+      waitFor('#ctDetail',function(e){flash(e);}); return;
+    case 'ck':
+      if(S.all.user.role==='admin'){S._ckItem=f.code;goFix({t:'admin',card:'รายการตรวจเช็ค'});}
+      else goFix({t:'field',code:f.code,then:'#fldCkEdit'});
+      return;
+    case 'admin':
+      go('admin');
+      waitFor(function(){return Array.prototype.filter.call(document.querySelectorAll('#admBox > .card'),function(c){var h=c.querySelector('h3');return h&&h.textContent.indexOf(f.card)>=0;})[0];},function(c){flash(c);});
+      return;
+    case 'entry':
+      k=getK(f.kpi);
+      if(k&&(k.source==='pm'||k.source==='guard')){goFix(fixForKpi(k,f.m));return;}
+      S._entryMonth=f.m||1;go('entry');
+      var inp=document.querySelector('#p-entry input[data-k="'+f.kpi+'"][data-f="num"]');
+      if(!inp) return;
+      flash(inp.closest('tr'));
+      if(inp.disabled){
+        var u=S.all.user;
+        toast(u.role==='viewer'?'บัญชีนี้ดูได้อย่างเดียว ให้ผู้ดูแลระบบเพิ่มสิทธิ์':(isLockedMonth(S.fy,f.m)?'เดือนนี้ล็อกแล้ว ให้ผู้ดูแลระบบปลดล็อกก่อน':'บัญชีนี้ไม่มีสิทธิ์แก้หน่วย '+(k?k.unit:'')),true);
+      } else {inp.focus();if(inp.select)inp.select();}
+      return;
+    case 'pm':
+      S.pmView='month';S._pmMonth=f.m||1;S.pmF={sys:String(f.code).slice(0,4),who:'',kpi:'',mine:false};go('pm');
+      var row=null;Array.prototype.forEach.call(document.querySelectorAll('#p-pm tbody tr'),function(r){var c=r.querySelector('.code');if(c&&c.textContent===String(f.code))row=r;});
+      if(!row) return;
+      flash(row);
+      var ai=row.querySelectorAll('input')[1];
+      if(ai&&!ai.disabled) ai.focus(); else toast('บัญชีนี้บันทึกผลรายการนี้ไม่ได้ (ต้องเป็นผู้รับผิดชอบ หรือมีสิทธิ์หน่วย '+sysUnit(f.code)+')',true);
+      return;
+    default:
+      if(f.set) Object.keys(f.set).forEach(function(x){S[x]=f.set[x];});
+      go(f.tab||'exec');
+  }
+}
+window.goFix=goFix;
+
+/* ---------- ปุ่ม "แก้ไขตรงจุด" ในหน้ารายละเอียดตัวชี้วัด / รายการ ---------- */
+dKpi=function(p,v){
+  ORIG.dKpi(p,v);
+  var k=getK(v.id);if(!k) return;
+  var cf=currentFiscal(S.today),adm=S.all.user.role==='admin';
+  var m=v.m||lastDataMonth([k],S.ix,S.fy)||(S.fy===cf.fy?Math.max(1,cf.month-1):12);
+  var b=[];
+  if(k.source==='pm') b.push(btn('บันทึกผลรายการที่เชื่อม ('+monthLabel(S.fy,m)+')',fixForKpi(k,m),true));
+  else if(k.source==='guard') b.push(btn('ไปหน้าตรวจตรา รปภ.',{t:'tab',tab:'guard'},true));
+  else b.push(btn('แก้ค่าเดือน '+monthLabel(S.fy,m),{t:'entry',kpi:k.kpi_id,m:m},true));
+  if(adm) b.push(btn('ตั้งเป้าหมายปีงบ '+S.fy,{t:'admin',card:'เป้าหมายตัวชี้วัด'}));
+  if(adm) b.push(btn('แก้นิยาม / แหล่งข้อมูล',{t:'admin',card:'ตัวชี้วัด และเป้าหมายเริ่มต้น'}));
+  afterSub(p,fixbar(b));
+};
+dItem=function(p,v){
+  ORIG.dItem(p,v);
+  var it=itemOf(v.id);if(!it) return;
+  var cf=currentFiscal(S.today),adm=S.all.user.role==='admin',m=v.m||(S.fy===cf.fy?cf.month:12);
+  afterSub(p,fixbar([
+    btn('บันทึกผลจริง '+monthLabel(S.fy,m),{t:'pm',code:it.code,m:m},true),
+    btn('บันทึกรายเครื่อง / หน้างาน',{t:'field',code:it.code}),
+    adm?btn('กำหนดแผนทั้งปี',{t:'plan',code:it.code}):null,
+    adm?btn('ผู้รับผิดชอบ / เชื่อม KPI',{t:'resp',code:it.code}):null,
+    canEditUnit(sysUnit(it.code))?btn('แก้รายการตรวจเช็ค',{t:'ck',code:it.code}):null]));
+};
+
+/* ---------- ผู้ดูแลระบบ: เลขหัวข้อเรียงใหม่ + แถบลัด ---------- */
+drawAdmin=function(box){
+  ORIG.drawAdmin(box);
+  var toc=el('div',{cls:'admtoc noprint',role:'navigation','aria-label':'ไปยังหัวข้อ'});
+  Array.prototype.forEach.call(box.querySelectorAll(':scope > .card'),function(c,i){
+    var h=c.querySelector('h3');if(!h) return;
+    var t=h.textContent.replace(/^\d+\.\s*/,'');h.textContent=(i+1)+'. '+t;c.id='adm-'+(i+1);
+    toc.appendChild(el('button',{type:'button',cls:'crumb',text:(i+1)+'. '+t.split(/[(（]/)[0].trim().slice(0,30),onclick:function(){c.scrollIntoView({behavior:'smooth',block:'start'});}}));
+  });
+  box.insertBefore(toc,box.firstChild);
+};
+
+/* ---------- ค้นหาด่วน (Ctrl+K หรือ /) ---------- */
+function palIndex(){
+  var d=S.all,o=[];
+  function add(g,k,t,s,f){o.push({g:g,k:String(k),t:String(t||''),s:String(s||''),go:f,h:(g+' '+k+' '+(t||'')+' '+(s||'')).toLowerCase()});}
+  tabsFor().forEach(function(t){add('หน้า',t[0],t[1],'',{t:'tab',tab:t[0]});});
+  d.master.forEach(function(k){add('ตัวชี้วัด',k.kpi_id,k.name,k.unit,{t:'kpi',id:k.kpi_id});});
+  d.systems.filter(function(s){return isAct(s.active);}).forEach(function(s){add('ระบบงาน',s.sys_code,s.name,sysUnit(s.sys_code),{t:'sys',sys:String(s.sys_code)});});
+  d.items.filter(function(i){return isAct(i.active);}).forEach(function(i){add('รายการบำรุงรักษา',i.code,i.name,i.responsible_name||'ยังไม่มีผู้รับผิดชอบ',{t:'item',id:i.code});});
+  (d.equipment||[]).filter(function(q){return isAct(q.active);}).forEach(function(q){add('อุปกรณ์',q.eq_id,q.name,[q.building,q.location].filter(String).join(' · '),{t:'eq',id:q.eq_id});});
+  (d.contracts||[]).forEach(function(c){add('สัญญา',c.contract_id,c.company,c.contract_no,{t:'contract',id:c.contract_id});});
+  (d.staff||[]).filter(function(s){return isAct(s.active)&&s.name;}).forEach(function(s){add('ผู้รับผิดชอบ (งานในแผน)','👤',s.name,s.duty?String(s.duty).slice(0,60):'',{t:'staff',name:String(s.name).trim()});});
+  return o;
+}
+function openPalette(){
+  if(!S.all){toast('รอโหลดข้อมูลสักครู่',true);return;}
+  if($('cmdk')) return;
+  var idx=palIndex(),sel=0,list=[];
+  var back=el('div',{cls:'dlg cmdk',id:'cmdk',role:'dialog','aria-modal':'true','aria-label':'ค้นหาและไปที่'});
+  var box=el('div',{cls:'box'});back.appendChild(box);
+  var q=el('input',{type:'search',id:'cmdkQ',autocomplete:'off','aria-label':'ค้นหา',placeholder:'พิมพ์รหัสหรือชื่อ: ตัวชี้วัด ระบบ รายการ อุปกรณ์ สัญญา ผู้รับผิดชอบ หรือชื่อหน้า…'});
+  var res=el('div',{cls:'cmdk-res',role:'listbox'});
+  box.appendChild(q);box.appendChild(res);box.appendChild(el('div',{cls:'hint',text:'↑ ↓ เลือก · Enter ไปที่ · Esc ปิด · พิมพ์หลายคำเพื่อกรองให้แคบลง'}));
+  function close(){document.removeEventListener('keydown',key,true);if(back.parentNode)back.parentNode.removeChild(back);}
+  function pick(x){close();goFix(x.go);}
+  function draw(){
+    var w=q.value.trim().toLowerCase().split(/\s+/).filter(String);
+    list=idx.filter(function(x){return w.every(function(t){return x.h.indexOf(t)>=0;});});
+    if(w.length) list.sort(function(a,b){return (a.k.toLowerCase().indexOf(w[0])===0?0:1)-(b.k.toLowerCase().indexOf(w[0])===0?0:1);});
+    list=list.slice(0,50);sel=Math.max(0,Math.min(sel,list.length-1));
+    res.textContent='';
+    if(!list.length){res.appendChild(el('div',{cls:'hint',style:'padding:10px',text:'ไม่พบรายการที่ตรงกับ "'+q.value+'"'}));return;}
+    var g=null,on=null;
+    list.forEach(function(x,i){
+      if(x.g!==g){g=x.g;res.appendChild(el('div',{cls:'cmdk-g',text:g}));}
+      var b=el('button',{type:'button',cls:'cmdk-i'+(i===sel?' on':''),role:'option','aria-selected':String(i===sel),onclick:function(){pick(x);}},[el('span',{cls:'code',text:x.k}),el('span',{text:x.t}),x.s?el('span',{cls:'hint',style:'margin:0',text:x.s}):null]);
+      if(i===sel) on=b;res.appendChild(b);
+    });
+    if(on&&on.scrollIntoView) on.scrollIntoView({block:'nearest'});
+  }
+  function key(e){
+    if(e.key==='Escape'){e.preventDefault();close();}
+    else if(e.key==='ArrowDown'){e.preventDefault();sel=Math.min(sel+1,list.length-1);draw();}
+    else if(e.key==='ArrowUp'){e.preventDefault();sel=Math.max(0,sel-1);draw();}
+    else if(e.key==='Enter'&&list[sel]){e.preventDefault();pick(list[sel]);}
+  }
+  q.addEventListener('input',function(){sel=0;draw();});
+  back.addEventListener('click',function(e){if(e.target===back)close();});
+  document.addEventListener('keydown',key,true);
+  document.body.appendChild(back);draw();q.focus();
+}
+})();
+</script>

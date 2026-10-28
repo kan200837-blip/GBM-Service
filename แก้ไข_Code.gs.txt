@@ -1,0 +1,31 @@
+จุดแก้ไขใน Code.gs สำหรับรุ่น 7 (ใช้ Ctrl+F หาข้อความ "เดิม" แล้วแทนด้วย "ใหม่") — มีทั้งหมด 6 จุด
+
+1) เพิ่มบทบาทผู้บริหาร
+เดิม:  const ROLES = ['admin', 'editor', 'viewer'];
+ใหม่:  const ROLES = ['admin', 'editor', 'viewer', 'exec'];
+
+2) currentUser_ — ใช้อีเมลจากการเข้าสู่ระบบด้วยรหัส (บรรทัดแรกของฟังก์ชัน)
+เดิม:  const email = String(Session.getActiveUser().getEmail() || '').toLowerCase();
+ใหม่:  const email = String((typeof CALL_USER_ !== 'undefined' && CALL_USER_ && CALL_USER_.email) || Session.getActiveUser().getEmail() || '').toLowerCase();
+
+3) requireEditor_ — ผู้บริหารดูได้ แต่แก้ไขไม่ได้
+เดิม:  if (u.role === 'viewer') throw new Error('บัญชีนี้ดูได้อย่างเดียว
+ใหม่:  if (u.role !== 'admin' && u.role !== 'editor') throw new Error('บัญชีนี้ดูได้อย่างเดียว
+       (แก้เฉพาะส่วนเงื่อนไขในวงเล็บ ข้อความที่เหลือคงเดิม)
+
+4) uploadAttachment — ผู้บริหารไม่อัปโหลดไฟล์
+เดิม:  if (u.role === 'viewer' && !staff) throw new Error('ไม่มีสิทธิ์แนบไฟล์
+ใหม่:  if (u.role !== 'admin' && u.role !== 'editor' && !staff) throw new Error('ไม่มีสิทธิ์แนบไฟล์
+
+5) getVisit — ผู้บริหารเปิดดูไฟล์แนบของบริษัทได้
+เดิม:  const priv = u.role === 'admin' || u.role === 'editor' || !!staff;
+ใหม่:  const priv = u.role === 'admin' || u.role === 'editor' || u.role === 'exec' || !!staff;
+
+6) ปิดช่องโหว่: ฟังก์ชันตั้งค่าฐานข้อมูลถูกเรียกจากหน้าเว็บโดยคนนิรนามได้
+   (google.script.run เรียกได้ทุกฟังก์ชันที่ชื่อไม่ลงท้ายด้วย _ เช่น connectExistingDb('ID ชีตของคนอื่น') จะเปลี่ยนฐานข้อมูลทั้งระบบ)
+   ใส่บรรทัด  ownerOnly_();  เป็นบรรทัดแรกในฟังก์ชันต่อไปนี้:
+     function setup() {
+     function connectExistingDb(id) {
+     function upgradeDb() {
+     function authorizeDrive() {
+   (ownerOnly_ อยู่ใน Report.gs · ยังรันจากหน้าแก้ไขสคริปต์ได้ตามปกติ)

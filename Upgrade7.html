@@ -1,0 +1,339 @@
+<!-- =====================================================================
+ ส่วนเสริมรุ่น 7 — วางใน Index.html ก่อนบรรทัด </body> ต่อจากส่วนเสริมรุ่น 6 (ต้องติดตั้ง Report.gs ด้วย)
+   · ปุ่ม "เข้าสู่ระบบ" (อีเมล + รหัสเข้าใช้) และบทบาท "ผู้บริหาร" ดูได้ทุกหน้า แก้ไขไม่ได้
+   · QR ของระบบ: ปุ่ม "📱 QR ของระบบนี้" ในหน้าระบบงาน + หน้า "ป้าย QR" เปิดให้ผู้บันทึกและผู้บริหาร
+   · เหตุการณ์ รปภ.: คลิกตัวเลขเหตุการณ์ทุกจุดเพื่อดูว่าเป็นเรื่องอะไร วันที่ เวลา จุดไหน ใครพบ
+   · ผู้ดูแลระบบ > รายงานอีเมลผู้บริหาร: ผู้รับ ตั้งเวลา สัปดาห์/เดือน/ไตรมาส ดูตัวอย่าง ส่งทดสอบ
+ ===================================================================== -->
+<style>
+.evt-chips{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0}
+a.evlink{color:#1d4ea2;font-weight:700;text-decoration:underline dotted;cursor:pointer}
+.gs-ev{cursor:pointer}.gs-ev:hover{box-shadow:0 0 0 2px var(--accent)}
+.login-box{display:grid;gap:10px;max-width:420px}
+.login-box input{width:100%}
+</style>
+<script>
+(function(){
+if(typeof gs!=='function'||typeof S==='undefined') return;
+var O={gs:gs,drawSys:drawSys,rGuard:rGuard,rPersonKpi:rPersonKpi,drawAdmin:drawAdmin,adminUsers:adminUsers,dKpi:dKpi,render:render};
+ROLE_TEXT.exec='ผู้บริหาร';
+
+/* ---------- เข้าสู่ระบบด้วยอีเมล + รหัสเข้าใช้ ---------- */
+var TK='kpi_tok',TOKEN='';
+try{TOKEN=localStorage.getItem(TK)||'';}catch(e){}
+function setToken(t){TOKEN=t||'';try{if(t)localStorage.setItem(TK,t);else localStorage.removeItem(TK);}catch(e){}}
+function after(fn){return function(r){
+  if(fn==='getAll'&&r&&r.user){r.user.exec=r.user.role==='exec';if(r.user.exec)r.user.role='viewer';setTimeout(authUi,0);}
+  return r;
+};}
+gs=function(fn){
+  var args=Array.prototype.slice.call(arguments,1);
+  if(!TOKEN||fn==='loginWithCode'||fn==='logoutToken') return O.gs.apply(null,arguments).then(after(fn));
+  return O.gs('callAs',TOKEN,fn,args).then(after(fn)).catch(function(e){
+    if(!/SESSION_EXPIRED/.test(e.message)) throw e;
+    setToken('');toast('หมดเวลาเข้าสู่ระบบ กรุณาเข้าสู่ระบบใหม่',true);setTimeout(authUi,0);
+    return O.gs.apply(null,[fn].concat(args)).then(after(fn));
+  });
+};
+function me(){return (S.all&&S.all.user)||(S.sv&&S.sv.user)||{};}
+function isExec(){var u=me();return !!u.exec||u.role==='exec';}
+function authUi(){
+  var tools=document.querySelector('.tools');if(!tools) return;
+  var b=$('authBtn');
+  if(!b){b=el('button',{type:'button',id:'authBtn',cls:'noprint'});tools.insertBefore(b,tools.firstChild);}
+  var u=me();
+  if(TOKEN){b.textContent='ออกจากระบบ';b.title='ออกจากระบบ '+(u.email||'');b.onclick=logout;}
+  else{b.textContent='🔑 เข้าสู่ระบบ';b.title='เข้าสู่ระบบด้วยอีเมลและรหัสเข้าใช้';b.onclick=loginDlg;}
+  if(S.all&&S.all.user){var x=S.all.user;$('userInfo').textContent=(x.email||'ผู้เข้าชม')+' · '+(x.exec?'ผู้บริหาร':ROLE_TEXT[x.role])+(x.role==='editor'&&x.units?' ('+x.units.join(', ')+')':'');}
+}
+function reloadAfterAuth(){
+  if(typeof ADM!=='undefined')ADM=null;S._admFresh=false;S._svc={};
+  if(document.body.classList.contains('standalone')&&S.sv){var p=$('p-sysview');sysView(p,S.sv.system.sys_code,S.svEq||'',true);setTimeout(authUi,800);return;}
+  $('loading').hidden=false;loadAll();
+}
+function loginDlg(){
+  var dg=dialog('เข้าสู่ระบบ');
+  var em=el('input',{type:'email',id:'loginEmail',autocomplete:'username','aria-label':'อีเมล',placeholder:'อีเมลที่ผู้ดูแลระบบลงทะเบียนไว้'});
+  var cd=el('input',{type:'password',id:'loginCode',autocomplete:'current-password','aria-label':'รหัสเข้าใช้',placeholder:'รหัสเข้าใช้'});
+  try{em.value=localStorage.getItem('kpi_last_email')||'';}catch(e){}
+  var msg=el('div');
+  var go=el('button',{cls:'primary',id:'loginGo',text:'เข้าสู่ระบบ',onclick:function(){
+    if(!em.value.trim()||!cd.value){msg.textContent='';msg.appendChild(el('div',{cls:'msg err',text:'กรุณาใส่อีเมลและรหัสเข้าใช้'}));return;}
+    go.disabled=true;
+    O.gs('loginWithCode',em.value.trim(),cd.value).then(function(r){
+      setToken(r.token);try{localStorage.setItem('kpi_last_email',r.email);}catch(e){}
+      dg.close();toast('ยินดีต้อนรับ '+r.name+' ('+(ROLE_TEXT[r.role]||r.role)+') · จำการเข้าสู่ระบบไว้ '+r.days+' วันบนเครื่องนี้');
+      if(r.role==='exec')S.tab='exec';
+      reloadAfterAuth();
+    }).catch(function(e){go.disabled=false;msg.textContent='';msg.appendChild(el('div',{cls:'msg err',text:e.message}));});
+  }});
+  cd.addEventListener('keydown',function(e){if(e.key==='Enter')go.click();});
+  dg.body.appendChild(el('div',{cls:'login-box'},[
+    el('p',{cls:'hint',style:'margin:0',text:'สำหรับผู้บริหาร ผู้บันทึกข้อมูล และผู้ดูแลระบบ · ขอรหัสเข้าใช้จากผู้ดูแลระบบ (ผู้ปฏิบัติงานหน้างานใช้ PIN 7 หลักในหน้าระบบงานตามเดิม)'}),
+    el('label',{},['อีเมล',em]),el('label',{},['รหัสเข้าใช้',cd]),msg,go]));
+  setTimeout(function(){(em.value?cd:em).focus();},50);
+}
+function logout(){
+  var t=TOKEN;setToken('');O.gs('logoutToken',t).catch(function(){});toast('ออกจากระบบแล้ว');reloadAfterAuth();
+}
+authUi();
+
+/* ---------- สิทธิ์เห็นหน้า: ป้าย QR เปิดให้ผู้ดูแล ผู้บันทึก ผู้บริหาร ---------- */
+tabsFor=function(){
+  var u=(S.all&&S.all.user)||{};
+  return ALL_TABS.filter(function(t){
+    if(t[0]==='admin') return u.role==='admin';
+    if(t[0]==='labels') return u.role==='admin'||u.role==='editor'||!!u.exec;
+    return true;
+  });
+};
+
+/* ---------- QR ของระบบ / อุปกรณ์ จากหน้าระบบงาน ---------- */
+function appBase(v){var b=(S.all&&S.all.appUrl)||(v&&v.appUrl)||'';if(!b){try{b=localStorage.getItem('kpi_app_url')||'';}catch(e){}}return b;}
+function qrDlg(v){
+  var s=v.system,dg=dialog('QR ระบบ '+s.sys_code+' · '+s.name);
+  if(typeof qrcode==='undefined'){dg.body.appendChild(el('div',{cls:'msg err',text:'โหลดตัวสร้าง QR ไม่สำเร็จ ตรวจการเชื่อมต่ออินเทอร์เน็ต'}));return;}
+  var base=appBase(v);
+  if(!/^https?:\/\//.test(base)){dg.body.appendChild(el('div',{cls:'msg err',text:'ยังไม่ทราบลิงก์เว็บแอป ให้ Deploy เป็น Web app แล้วเปิดจากลิงก์ที่ลงท้าย /exec'}));return;}
+  try{localStorage.setItem('kpi_app_url',base);}catch(e){}
+  var opts=[{k:'sys',v:s.sys_code,n:'ทั้งระบบ — '+s.name}];
+  v.items.forEach(function(i){i.equipment.forEach(function(q){opts.push({k:'eq',v:q.eq_id,n:q.name+(q.building?' · '+q.building:'')});});});
+  var sel=el('select',{id:'qrPick','aria-label':'เลือก QR'},opts.map(function(o,i){return el('option',{value:String(i),text:(o.k==='sys'?'':o.v+' ')+o.n});}));
+  opts.forEach(function(o,i){if(v.focusEq&&o.v===v.focusEq)sel.value=String(i);});
+  var box=el('div',{style:'text-align:center'});
+  dg.body.appendChild(el('div',{cls:'controls'},[el('label',{},['QR ของ ',sel])]));dg.body.appendChild(box);
+  function draw(){
+    var o=opts[Number(sel.value)],u=labelUrl(base,o.k,o.v);box.textContent='';
+    var q=el('div',{style:'width:260px;height:260px;margin:6px auto;background:#fff;padding:8px;border-radius:8px'});
+    q.innerHTML=qrOf(u).createSvgTag({cellSize:6,margin:0,scalable:true});
+    var svg=q.querySelector('svg');if(svg){svg.style.width='100%';svg.style.height='100%';}
+    box.appendChild(q);
+    box.appendChild(el('div',{cls:'code',style:'font-size:22px;font-weight:700',text:o.v}));
+    box.appendChild(el('div',{text:o.n}));
+    box.appendChild(el('div',{style:'display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:10px'},[
+      el('button',{cls:'primary',text:'ดาวน์โหลดรูป PNG',onclick:function(){downloadPng(labelPng(o.v,o.n,[s.sys_code+' '+s.name,'สแกน: ดูผลบำรุงรักษา / บันทึกผล (ผู้ได้รับมอบหมาย)'],u),'QR_'+o.v+'.png');}}),
+      el('button',{text:'คัดลอกลิงก์',onclick:function(){try{navigator.clipboard.writeText(u).then(function(){toast('คัดลอกลิงก์แล้ว');});}catch(e){toast(u);}}}),
+      el('a',{href:u,target:'_blank',rel:'noopener',text:'เปิดลิงก์'})]));
+  }
+  sel.addEventListener('change',draw);draw();
+  if(S.all&&tabsFor().some(function(t){return t[0]==='labels';}))
+    dg.body.appendChild(el('p',{cls:'hint',style:'text-align:center'},['พิมพ์ป้ายหลายระบบพร้อมกันได้ที่ ',el('button',{type:'button',cls:'linkbtn',text:'หน้า "ป้าย QR"',onclick:function(){dg.close();S.detail=false;S.tab='labels';render();}})]));
+}
+drawSys=function(wrap,v,standalone,host){
+  O.drawSys(wrap,v,standalone,host);
+  var hd=wrap.querySelector('.shead');
+  if(hd&&!hd.querySelector('#sysQrBtn')) hd.appendChild(el('button',{type:'button',id:'sysQrBtn',cls:'noprint',text:'📱 QR ของระบบนี้',onclick:function(){qrDlg(v);}}));
+};
+
+/* ---------- เหตุการณ์ รปภ.: คลิกแล้วรู้ว่าเรื่องอะไร วันที่เท่าไร ---------- */
+function evTable(host,r,note){
+  var rows=r.rows||[];
+  host.appendChild(el('p',{cls:'hint',text:(note?note+' · ':'')+'ทั้งหมด '+r.total+' เหตุการณ์'+(r.total>rows.length?' (แสดง '+rows.length+' ล่าสุด)':'')}));
+  if(!rows.length){host.appendChild(el('div',{cls:'msg ok',text:'ไม่มีเหตุการณ์ผิดปกติที่บันทึกในช่วงนี้'}));return;}
+  var top={};rows.forEach(function(x){var t=x.event.slice(0,60);top[t]=(top[t]||0)+1;});
+  var f=el('input',{type:'search',placeholder:'ค้นหาเรื่อง / ผู้พบ / จุด / อาคาร','aria-label':'ค้นหาเหตุการณ์',style:'width:100%;max-width:380px'});
+  var chips=el('div',{cls:'evt-chips'},[el('span',{cls:'hint',style:'margin:0',text:'เรื่องที่พบบ่อย:'})]);
+  Object.keys(top).sort(function(a,b){return top[b]-top[a];}).slice(0,8).forEach(function(t){chips.appendChild(el('button',{type:'button',cls:'crumb',text:t+' ('+top[t]+')',onclick:function(){f.value=f.value===t?'':t;draw();}}));});
+  host.appendChild(chips);host.appendChild(f);
+  var t=el('table',{cls:'tbl',style:'font-size:13px'});
+  t.appendChild(el('thead',{},[el('tr',{},['#','วันที่','เวลา','เวร','เรื่องที่พบ','จุดสแกน','อาคาร','สายตรวจ','ผู้พบ'].map(function(h){return el('th',{text:h});}))]));
+  var tb=el('tbody');t.appendChild(tb);
+  function draw(){
+    tb.textContent='';var s=f.value.trim().toLowerCase(),n=0;
+    rows.forEach(function(x){
+      if(s&&[x.event,x.name,x.point,x.building,x.route].join(' ').toLowerCase().indexOf(s)<0) return;n++;
+      tb.appendChild(el('tr',{},[el('td',{text:String(n)}),el('td',{style:'white-space:nowrap',text:thDate(x.date)}),el('td',{text:x.time}),el('td',{text:x.shift}),
+        el('td',{style:'min-width:200px;font-weight:600',text:x.event}),el('td',{text:x.point}),el('td',{text:x.building||'–'}),el('td',{text:x.route}),el('td',{style:'white-space:nowrap',text:x.name})]));
+    });
+    if(!n) tb.appendChild(el('tr',{},[el('td',{colspan:'9',cls:'hint',text:'ไม่พบรายการ'})]));
+  }
+  f.addEventListener('input',draw);draw();
+  host.appendChild(el('div',{style:'overflow:auto;max-height:62vh;margin-top:6px'},[t]));
+}
+function evDlg(q,title){
+  var dg=dialog(title||'เหตุการณ์ที่ รปภ. บันทึก');
+  dg.body.appendChild(el('div',{cls:'loading',text:'กำลังโหลดเหตุการณ์…'}));
+  gs('getGuardEvents',q).then(function(r){dg.body.textContent='';evTable(dg.body,r);}).catch(function(e){dg.body.textContent='';dg.body.appendChild(el('div',{cls:'msg err',text:e.message}));});
+}
+window.evDlg=evDlg;
+function evLink(td,q,title){
+  var n=Number(String(td.textContent).replace(/,/g,''));
+  if(!(n>0)||td.querySelector('a.evlink')) return;
+  td.textContent='';td.appendChild(el('a',{href:'#',cls:'evlink',title:'คลิกดูรายการเหตุการณ์',text:String(n),onclick:function(e){e.preventDefault();e.stopPropagation();evDlg(q,title);}}));
+}
+/* หน้าเหตุการณ์ของเดือน: แสดงครบทุกรายการ พร้อมอาคาร สายตรวจ และค้นหา */
+gEvents=function(p,d){
+  var host=el('div',{},[el('div',{cls:'loading',text:'กำลังโหลดเหตุการณ์…'})]);p.appendChild(host);
+  gs('getGuardEvents',{ym:d.month.ym}).then(function(r){host.textContent='';evTable(host,r,gThYm(d.month.ym));}).catch(function(e){host.textContent='';host.appendChild(el('div',{cls:'msg err',text:e.message}));});
+};
+rGuard=function(p){
+  O.rGuard(p);
+  var g=S.guard||{},d=g.data;if(!d) return;
+  var base=g.year?{fy:g.year}:{ym:d.month.ym},per=g.year?'ปีงบ '+g.year:gThYm(d.month.ym);
+  Array.prototype.forEach.call(p.querySelectorAll('div'),function(x){
+    var f=x.firstChild;
+    if(!f||f.nodeType!==1||f.textContent.indexOf('S8')!==0||x.classList.contains('gs-ev')) return;
+    x.classList.add('gs-ev');x.title='คลิกดูรายการเหตุการณ์';x.setAttribute('role','button');x.tabIndex=0;
+    x.addEventListener('click',function(){evDlg(base,'เหตุการณ์ที่ รปภ. บันทึก · '+per);});
+  });
+  Array.prototype.forEach.call(p.querySelectorAll('table'),function(t){
+    var ths=t.querySelectorAll('thead th');if(!ths.length) return;
+    var last=ths[ths.length-1].textContent.trim(),first=ths[0].textContent.trim();
+    if(last==='S8 เหตุการณ์'&&d.trend){
+      var tr=d.trend.slice().reverse();
+      Array.prototype.forEach.call(t.querySelectorAll('tbody tr'),function(row,i){var x=tr[i];if(x)evLink(row.lastChild,{ym:x.ym},'เหตุการณ์ที่ รปภ. บันทึก · '+gThYm(x.ym));});
+    } else if(last==='เหตุการณ์'){
+      Array.prototype.forEach.call(t.querySelectorAll('tbody tr'),function(row){
+        var c=row.children;if(c.length<2) return;
+        var who=c[0].textContent.trim();
+        if(first==='ลำดับ'){var pt=c[1].textContent.trim();evLink(row.lastChild,Object.assign({point:pt},base),'เหตุการณ์ที่จุด '+pt+' · '+per);}
+        else if(who&&who!=='ทั้งหน่วย') evLink(row.lastChild,Object.assign({name:who},base),'เหตุการณ์ที่ '+who+' บันทึก · '+per);
+      });
+    }
+  });
+};
+/* KPI รายบุคคล รปภ.: ตารางเหตุการณ์จากการสแกนรายเดือน คลิกตัวเลขเพื่อดูรายละเอียด */
+var EVC={};
+rPersonKpi=function(p){
+  O.rPersonKpi(p);
+  var g=S.person;if(!g||g.group!=='guard'||!g.data) return;
+  var fy=g.data.fy,who=g.view==='person'&&g.who&&g.who!=='*'?g.who:'',key=fy+'|'+who;
+  var card=el('div',{cls:'card',id:'pkEvents',style:'margin-top:14px'},[el('h3',{text:'เหตุการณ์ที่ รปภ. บันทึกขณะตรวจตรา (จากการสแกนจุดตรวจ) — '+(who||'ทุกคน')+' · ปีงบ '+fy}),
+    el('p',{cls:'hint',style:'margin:0 0 8px',text:'คลิกตัวเลขเพื่อดูว่าเป็นเรื่องอะไร วันที่ เวลา จุดไหน · ตัวชี้วัดข้อ 1–4 ด้านบนเป็นค่าที่กรอก/นำเข้า ส่วนตารางนี้มาจากบันทึกสแกนจริง'})]);
+  p.appendChild(card);
+  function draw(r){
+    var cnt={};r.rows.forEach(function(x){cnt[x.m]=(cnt[x.m]||0)+1;});
+    var t=el('table',{cls:'tbl',style:'font-size:13px'}),hr=el('tr',{},[el('th',{text:''})]),row=el('tr',{},[el('td',{style:'font-weight:600',text:'จำนวนเหตุการณ์'})]);
+    g.data.months.forEach(function(m){
+      hr.appendChild(el('th',{style:'text-align:right',text:MONTH_NAMES[m-1]}));
+      var n=cnt[m]||0,sub=r.rows.filter(function(x){return x.m===m;});
+      row.appendChild(el('td',{style:'text-align:right'},[n?el('a',{href:'#',cls:'evlink',text:String(n),onclick:function(e){e.preventDefault();var dg=dialog('เหตุการณ์ '+(who||'ทุกคน')+' · '+MONTH_NAMES[m-1]+' ปีงบ '+fy);evTable(dg.body,{total:sub.length,rows:sub});}}):el('span',{cls:'hint',text:'–'})]));
+    });
+    hr.appendChild(el('th',{style:'text-align:right',text:'รวมปี'}));
+    row.appendChild(el('td',{style:'text-align:right;font-weight:700'},[r.total?el('a',{href:'#',cls:'evlink',text:String(r.total),onclick:function(e){e.preventDefault();var dg=dialog('เหตุการณ์ '+(who||'ทุกคน')+' · ทั้งปีงบ '+fy);evTable(dg.body,r);}}):el('span',{text:'0'})]));
+    t.appendChild(el('thead',{},[hr]));t.appendChild(el('tbody',{},[row]));
+    card.appendChild(el('div',{style:'overflow:auto'},[t]));
+  }
+  if(EVC[key]){draw(EVC[key]);return;}
+  var ld=el('div',{cls:'hint',text:'กำลังโหลด…'});card.appendChild(ld);
+  gs('getGuardEvents',{fy:fy,name:who}).then(function(r){EVC[key]=r;ld.remove();draw(r);}).catch(function(e){ld.textContent=e.message;});
+};
+/* หน้ารายละเอียดตัวชี้วัด S8: ปุ่มดูรายการเหตุการณ์ */
+dKpi=function(p,v){
+  O.dKpi(p,v);
+  var k=getK(v.id);if(!k||k.source!=='guard'||!/S8|เหตุการณ์/.test(k.kpi_id+' '+k.name)) return;
+  var b=el('button',{type:'button',cls:'primary',text:'ดูรายการเหตุการณ์'+(v.m?' '+monthLabel(S.fy,v.m):' ทั้งปีงบ '+S.fy),onclick:function(){evDlg({fy:S.fy,month:v.m||0},'เหตุการณ์ที่ รปภ. บันทึก · '+(v.m?monthLabel(S.fy,v.m):'ปีงบ '+S.fy));}});
+  var bar=p.querySelector('.fixbar');
+  if(bar) bar.appendChild(b); else p.insertBefore(el('div',{cls:'fixbar noprint'},[b]),p.querySelector('.tiles')||null);
+};
+
+/* ---------- ผู้ดูแลระบบ: บทบาทผู้บริหาร + รหัสเข้าใช้ ---------- */
+function randCode(n){var a='ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789',r=new Uint8Array(n),s='';(window.crypto||window.msCrypto).getRandomValues(r);for(var i=0;i<n;i++)s+=a.charAt(r[i]%a.length);return s;}
+adminUsers=function(){
+  var c=O.adminUsers(),roles={},codes=null,chips=[];
+  ((typeof ADM!=='undefined'&&ADM&&ADM.users)||[]).forEach(function(u){roles[String(u.email||'').trim().toLowerCase()]=u;});
+  var tb=c.querySelector('table');if(!tb) return c;
+  var hr=tb.querySelector('thead tr');hr.insertBefore(el('th',{text:'รหัสเข้าใช้'}),hr.lastChild);
+  function wire(tr){
+    var role=tr.querySelector('select[data-f="role"]'),email=tr.querySelector('input[data-f="email"]');
+    if(!role||!email||tr._w) return;tr._w=1;
+    role.appendChild(el('option',{value:'exec',text:'ผู้บริหาร'}));
+    var u=roles[String(email.value).trim().toLowerCase()];
+    if(u&&u.role==='exec') role.value='exec';
+    function sync(){if(role.value!=='exec')return;Array.prototype.forEach.call(tr.querySelectorAll('input[data-unit]'),function(b){b.checked=false;b.disabled=true;});}
+    role.addEventListener('change',sync);sync();
+    var st=chip('nodata',u?'กำลังตรวจ…':'บันทึกผู้ใช้ก่อน');st._em=String(email.value).trim().toLowerCase();chips.push(st);
+    var inp=el('input',{type:'text',autocomplete:'off',placeholder:'6 ตัวขึ้นไป',style:'width:110px','aria-label':'รหัสเข้าใช้ '+email.value});
+    var rnd=el('button',{type:'button',text:'สุ่ม',title:'สร้างรหัส 10 ตัวแบบสุ่ม',onclick:function(){inp.value=randCode(10);}});
+    var set=el('button',{type:'button',text:'ตั้ง',onclick:function(){
+      var em=String(email.value).trim().toLowerCase();
+      if(!roles[em]){toast('บันทึกรายชื่อผู้ใช้ก่อน แล้วจึงตั้งรหัส',true);return;}
+      if(!/^[A-Za-z0-9]{6,32}$/.test(inp.value)){toast('รหัสต้องเป็นตัวอักษรอังกฤษ/ตัวเลข 6–32 ตัว',true);return;}
+      set.disabled=true;var code=inp.value;
+      gs('setUserCode',em,code).then(function(){
+        st.className='chip ok';st.textContent='ตั้งแล้ว';inp.value='';
+        var dg=dialog('รหัสเข้าใช้ของ '+em);
+        dg.body.appendChild(el('div',{cls:'msg warn',text:'จดหรือส่งให้เจ้าของบัญชีตอนนี้ — ระบบไม่แสดงรหัสนี้อีก'}));
+        dg.body.appendChild(el('p',{},['อีเมล: ',el('b',{text:em})]));
+        dg.body.appendChild(el('p',{},['รหัสเข้าใช้: ',el('b',{style:'font-family:monospace;font-size:20px;letter-spacing:2px',text:code})]));
+        dg.body.appendChild(el('p',{cls:'hint',text:'เข้าใช้: เปิดลิงก์ระบบ → ปุ่ม "🔑 เข้าสู่ระบบ" มุมขวาบน → ใส่อีเมลและรหัส (ระบบจำไว้ 30 วันบนเครื่องนั้น)'}));
+      }).catch(function(e){toast(e.message,true);}).then(function(){set.disabled=false;});
+    }});
+    var clr=el('button',{type:'button',text:'ล้าง',onclick:function(){
+      var em=String(email.value).trim().toLowerCase();if(!roles[em]||!confirm('ล้างรหัสเข้าใช้ของ '+em+' ? (ออกจากระบบทุกเครื่องทันที)'))return;
+      gs('setUserCode',em,'').then(function(){st.className='chip nodata';st.textContent='ยังไม่ตั้ง';toast('ล้างรหัสแล้ว');}).catch(function(e){toast(e.message,true);});
+    }});
+    tr.insertBefore(el('td',{},[el('div',{style:'display:flex;gap:4px;align-items:center;flex-wrap:wrap'},[st,inp,rnd,set,clr])]),tr.lastChild);
+  }
+  Array.prototype.forEach.call(tb.querySelectorAll('tbody tr'),wire);
+  new MutationObserver(function(ms){ms.forEach(function(m){Array.prototype.forEach.call(m.addedNodes,function(n){if(n.tagName==='TR')wire(n);});});}).observe(tb.querySelector('tbody'),{childList:true});
+  gs('getUserCodeStatus').then(function(r){codes=r||{};chips.forEach(function(st){if(!roles[st._em])return;var on=!!codes[st._em];st.className='chip '+(on?'ok':'nodata');st.textContent=on?'ตั้งแล้ว':'ยังไม่ตั้ง';});}).catch(function(){});
+  c.appendChild(el('p',{cls:'hint',text:'บทบาท "ผู้บริหาร": ดูได้ทุกหน้า (สรุปผู้บริหาร รายงาน ป้าย QR ข้อมูล รปภ. KPI รายบุคคล ไฟล์แนบสัญญา) แต่แก้ไขไม่ได้ และรับอีเมลรายงานอัตโนมัติ · "รหัสเข้าใช้" ใช้คู่กับอีเมลเพื่อเข้าสู่ระบบจากปุ่ม 🔑 มุมขวาบน จำเป็นเมื่อใช้ Gmail ส่วนตัว เพราะระบบอ่านอีเมลของผู้เปิดเว็บไม่ได้'}));
+  return c;
+};
+
+/* ---------- ผู้ดูแลระบบ: รายงานอีเมลผู้บริหาร ---------- */
+var KIND=[['week','รายสัปดาห์'],['month','รายเดือน'],['quarter','รายไตรมาส']];
+function previewDlg(kind){
+  var dg=dialog('ตัวอย่างรายงาน'+(KIND.filter(function(k){return k[0]===kind;})[0]||['',''])[1]);
+  dg.body.appendChild(el('div',{cls:'loading',text:'กำลังสร้างรายงาน…'}));
+  gs('previewReport',kind).then(function(r){
+    dg.body.textContent='';
+    dg.body.appendChild(el('p',{cls:'hint',text:'หัวเรื่องอีเมล: '+r.subject}));
+    var f=el('iframe',{title:'ตัวอย่างอีเมล',style:'width:100%;height:70vh;border:1px solid var(--line);border-radius:8px;background:#fff'});
+    f.srcdoc='<!doctype html><meta charset="utf-8"><body style="margin:12px;background:#fff">'+r.html+'<\/body>';
+    dg.body.appendChild(f);
+  }).catch(function(e){dg.body.textContent='';dg.body.appendChild(el('div',{cls:'msg err',text:e.message}));});
+}
+function reportCard(){
+  var c=el('div',{cls:'card',id:'admReport',style:'margin-bottom:18px'},[el('h3',{text:'รายงานสรุปส่งอีเมลผู้บริหาร'}),
+    el('p',{cls:'hint',style:'margin:0 0 10px',text:'สรุปตัวชี้วัด การบำรุงรักษา ปัญหาที่พบ เหตุการณ์ รปภ. และสัญญา ส่งอัตโนมัติ · สัปดาห์: ทุกวันจันทร์ 07:00 (7 วันก่อนหน้า) · เดือน: วันที่ 1 เวลา 08:00 (เดือนก่อน) · ไตรมาส: 1 ต.ค./ม.ค./เม.ย./ก.ค. 08:00 · ครั้งแรกให้รัน authorizeReports() ในหน้าแก้ไขสคริปต์หนึ่งครั้ง'})]);
+  var body=el('div',{},[el('div',{cls:'loading',text:'กำลังโหลด…'})]);c.appendChild(body);
+  function cb(v,id){var x=el('input',{type:'checkbox',id:id});x.checked=!!v;return x;}
+  function draw(s){
+    body.textContent='';
+    var to=el('textarea',{id:'rptTo',rows:'2',style:'width:100%','aria-label':'อีเมลผู้รับเพิ่มเติม',placeholder:'อีเมลผู้รับเพิ่มเติม คั่นด้วย , เช่น director@hospital.go.th, deputy@hospital.go.th'});to.value=s.to||'';
+    var ex=cb(s.exec,'rptExec'),wk=cb(s.weekly,'rptWeek'),mo=cb(s.monthly,'rptMonth'),qt=cb(s.quarterly,'rptQuarter');
+    body.appendChild(el('label',{style:'display:block;font-size:13px;color:var(--muted)'},['อีเมลผู้รับเพิ่มเติม',to]));
+    body.appendChild(el('label',{style:'display:flex;gap:8px;align-items:center;margin:8px 0'},[ex,'ส่งถึงผู้ใช้บทบาท "ผู้บริหาร" ทุกคนอัตโนมัติ']));
+    body.appendChild(el('div',{style:'display:flex;gap:18px;flex-wrap:wrap;margin:6px 0'},[el('label',{style:'display:flex;gap:6px;align-items:center'},[wk,'รายสัปดาห์']),el('label',{style:'display:flex;gap:6px;align-items:center'},[mo,'รายเดือน']),el('label',{style:'display:flex;gap:6px;align-items:center'},[qt,'รายไตรมาส'])]));
+    function lastTxt(x){if(!x)return 'ยังไม่เคยส่ง';var a=x.split('|');return fmtTime(a[0])+' ('+(a[1]||0)+' ผู้รับ)';}
+    body.appendChild(el('ul',{cls:'hint',style:'margin:6px 0 10px 18px'},[
+      el('li',{text:'ผู้รับปัจจุบัน ('+s.recipients.length+'): '+(s.recipients.join(', ')||'ยังไม่มี — เพิ่มผู้ใช้บทบาทผู้บริหาร หรือใส่อีเมลด้านบน')}),
+      el('li',{text:'ตั้งเวลาแล้ว: '+(s.triggers.length?'ใช่':'ยังไม่ได้ตั้ง (เลือกอย่างน้อย 1 รายการแล้วบันทึก)')+(s.quota!==null?' · โควตาอีเมลเหลือวันนี้ '+s.quota:'')}),
+      el('li',{text:'ส่งล่าสุด — สัปดาห์: '+lastTxt(s.last.week)+' · เดือน: '+lastTxt(s.last.month)+' · ไตรมาส: '+lastTxt(s.last.quarter)})]));
+    var save=el('button',{cls:'primary',id:'rptSave',text:'บันทึกการตั้งค่า',onclick:function(){
+      save.disabled=true;
+      gs('saveReportSettings',{to:to.value,exec:ex.checked,weekly:wk.checked,monthly:mo.checked,quarterly:qt.checked}).then(function(r){toast('บันทึกการตั้งค่ารายงานแล้ว');draw(r);}).catch(function(e){toast(e.message,true);save.disabled=false;});
+    }});
+    body.appendChild(el('div',{style:'margin-bottom:10px'},[save]));
+    var t=el('table',{style:'max-width:620px'}),tb=el('tbody');
+    KIND.forEach(function(k){
+      tb.appendChild(el('tr',{},[el('td',{style:'font-weight:600',text:k[1]}),el('td',{},[
+        el('button',{type:'button',cls:'act',text:'ดูตัวอย่าง',onclick:function(){previewDlg(k[0]);}}),
+        el('button',{type:'button',cls:'act',text:'ส่งทดสอบถึงฉัน',onclick:function(){var b=this;b.disabled=true;gs('sendReportNow',k[0],true).then(function(r){toast('ส่งแล้วถึง '+r.to.join(', '));}).catch(function(e){toast(e.message,true);}).then(function(){b.disabled=false;});}}),
+        el('button',{type:'button',cls:'act',text:'ส่งผู้บริหารตอนนี้',onclick:function(){var b=this;if(!confirm('ส่งรายงาน'+k[1]+'ถึงผู้รับ '+s.recipients.length+' คน ตอนนี้?'))return;b.disabled=true;gs('sendReportNow',k[0],false).then(function(r){toast('ส่งแล้ว '+r.sent+' ผู้รับ');return gs('getReportSettings').then(draw);}).catch(function(e){toast(e.message,true);b.disabled=false;});}})])]));
+    });
+    t.appendChild(tb);body.appendChild(t);
+  }
+  gs('getReportSettings').then(draw).catch(function(e){body.textContent='';body.appendChild(el('div',{cls:'msg err',text:e.message+' — ตรวจว่าได้เพิ่มไฟล์ Report.gs และรัน authorizeReports() แล้ว'}));});
+  return c;
+}
+drawAdmin=function(box){
+  O.drawAdmin(box);
+  var c=reportCard(),n=box.querySelectorAll(':scope > .card').length+1,h=c.querySelector('h3');
+  h.textContent=n+'. '+h.textContent;c.id='adm-'+n;box.appendChild(c);
+  var toc=box.querySelector('.admtoc');
+  if(toc) toc.appendChild(el('button',{type:'button',cls:'crumb',text:n+'. รายงานอีเมลผู้บริหาร',onclick:function(){c.scrollIntoView({behavior:'smooth',block:'start'});}}));
+};
+
+/* ---------- หน้าสรุปผู้บริหาร: ปุ่มดูตัวอย่างรายงานอีเมล ---------- */
+render=function(){
+  O.render();
+  if(S.tab!=='exec'||S.detail||!S.all) return;
+  var u=S.all.user;if(u.role!=='admin'&&!u.exec) return;
+  var g=document.querySelector('#p-exec .ex-head .noprint');
+  if(g&&!g.querySelector('.rptPrev')) KIND.forEach(function(k){g.appendChild(el('button',{type:'button',cls:'rptPrev',text:'📧 รายงาน'+k[1],title:'ดูตัวอย่างอีเมลรายงานที่ส่งผู้บริหาร',onclick:function(){previewDlg(k[0]);}}));});
+};
+})();
+</script>
